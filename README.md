@@ -181,3 +181,14 @@ Use at your own risk.
 # License
 
 MIT License
+
+## v1.4.0 control configuration
+
+When adding the integration, configure:
+
+- Name: `BYD Vehicle`
+- Telemetry topic: `overdrive/vehicle/telemetry`
+- Availability topic: `overdrive/vehicle/telemetry/availability`
+- Control topic: `overdrive/vehicle/telemetry`
+
+The **Control topic** is now used explicitly for every `/set` command. A safe **MQTT Control Test** button is also created. Press it and check the **MQTT Control Test Result** sensor; `received: PING` confirms Home Assistant command publishing and MQTT broker loopback are working.

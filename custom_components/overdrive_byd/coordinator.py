@@ -13,8 +13,10 @@ from .const import (
     DOMAIN,
     CONF_TELEMETRY_TOPIC,
     CONF_AVAILABILITY_TOPIC,
+    CONF_CONTROL_TOPIC,
     DEFAULT_TELEMETRY_TOPIC,
     DEFAULT_AVAILABILITY_TOPIC,
+    DEFAULT_CONTROL_TOPIC,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,12 +44,18 @@ class OverdriveBYDCoordinator(DataUpdateCoordinator):
         self.availability_topic = entry.data.get(
             CONF_AVAILABILITY_TOPIC,
             DEFAULT_AVAILABILITY_TOPIC,
-        )
+        ).rstrip("/")
+        self.control_topic = entry.data.get(
+            CONF_CONTROL_TOPIC,
+            DEFAULT_CONTROL_TOPIC,
+        ).rstrip("/")
+        self.control_test_topic = f"overdrive_byd/{entry.entry_id}/control_test"
 
         self.data: dict[str, Any] = {}
         self.available = False
         self._unsub_telemetry: list[Any] = []
         self._unsub_availability = None
+        self._unsub_control_test = None
 
     async def async_setup(self) -> None:
         # Legacy aggregate JSON payload.
@@ -79,6 +87,16 @@ class OverdriveBYDCoordinator(DataUpdateCoordinator):
             qos=0,
         )
 
+        # Local broker-loopback diagnostic. This does not send anything to
+        # the vehicle. The MQTT Discovery test button publishes here; seeing
+        # this callback proves Home Assistant -> broker -> integration works.
+        self._unsub_control_test = await mqtt.async_subscribe(
+            self.hass,
+            self.control_test_topic,
+            self._control_test_received,
+            qos=0,
+        )
+
     async def async_unsubscribe(self) -> None:
         for unsub in self._unsub_telemetry:
             if unsub:
@@ -88,6 +106,11 @@ class OverdriveBYDCoordinator(DataUpdateCoordinator):
         if self._unsub_availability:
             self._unsub_availability()
             self._unsub_availability = None
+
+        if self._unsub_control_test:
+            self._unsub_control_test()
+            self._unsub_control_test = None
+        self._unsub_control_test = None
 
     @staticmethod
     def _decode_payload(payload: Any) -> Any:
@@ -164,6 +187,14 @@ class OverdriveBYDCoordinator(DataUpdateCoordinator):
                 self.data["odometer"] = payload
 
         self.available = True
+        self.async_set_updated_data(dict(self.data))
+
+
+    @callback
+    def _control_test_received(self, msg) -> None:
+        """Record a local MQTT round-trip from the diagnostic button."""
+        payload = self._decode_payload(msg.payload)
+        self.data["control_test"] = f"received: {payload}"
         self.async_set_updated_data(dict(self.data))
 
     @callback

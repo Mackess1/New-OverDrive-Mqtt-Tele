@@ -9,13 +9,15 @@ from .const import (
     DEFAULT_NAME,
     DEFAULT_TELEMETRY_TOPIC,
     DEFAULT_AVAILABILITY_TOPIC,
+    DEFAULT_CONTROL_TOPIC,
     CONF_TELEMETRY_TOPIC,
     CONF_AVAILABILITY_TOPIC,
+    CONF_CONTROL_TOPIC,
 )
 
 
 class OverdriveBYDConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(self, user_input=None):
         errors = {}
@@ -23,6 +25,15 @@ class OverdriveBYDConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             await self.async_set_unique_id("overdrive_byd")
             self._abort_if_unique_id_configured()
+
+            # Normalize MQTT bases so later topic building never creates //.
+            for key in (
+                CONF_TELEMETRY_TOPIC,
+                CONF_AVAILABILITY_TOPIC,
+                CONF_CONTROL_TOPIC,
+            ):
+                if isinstance(user_input.get(key), str):
+                    user_input[key] = user_input[key].strip().rstrip("/")
 
             return self.async_create_entry(
                 title=user_input["name"],
@@ -39,6 +50,10 @@ class OverdriveBYDConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(
                     CONF_AVAILABILITY_TOPIC,
                     default=DEFAULT_AVAILABILITY_TOPIC,
+                ): str,
+                vol.Required(
+                    CONF_CONTROL_TOPIC,
+                    default=DEFAULT_CONTROL_TOPIC,
                 ): str,
             }
         )

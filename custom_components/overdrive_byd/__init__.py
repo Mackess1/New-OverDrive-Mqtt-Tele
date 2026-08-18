@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, PLATFORMS
 from .coordinator import OverdriveBYDCoordinator
+from .discovery_controls import async_publish_control_discovery
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +20,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Publish native MQTT Discovery controls. This bypasses custom control
+    # platform loading and mirrors the mechanism used by OverDrive itself.
+    await async_publish_control_discovery(hass, entry)
 
     return True
 

@@ -31,6 +31,12 @@ class OverdriveBYDSensorEntityDescription(SensorEntityDescription):
 
 SENSORS: tuple[OverdriveBYDSensorEntityDescription, ...] = (
     OverdriveBYDSensorEntityDescription(
+        key="control_test",
+        name="MQTT Control Test Result",
+        icon="mdi:lan-check",
+        entity_category="diagnostic",
+    ),
+    OverdriveBYDSensorEntityDescription(
         key="soc",
         name="Battery Percentage",
         native_unit_of_measurement=PERCENTAGE,
@@ -287,6 +293,12 @@ SENSORS: tuple[OverdriveBYDSensorEntityDescription, ...] = (
 
 
 ARRAY_SENSORS: tuple[OverdriveBYDSensorEntityDescription, ...] = (
+    OverdriveBYDSensorEntityDescription(
+        key="control_test",
+        name="MQTT Control Test Result",
+        icon="mdi:lan-check",
+        entity_category="diagnostic",
+    ),
     OverdriveBYDSensorEntityDescription(key="radar_front_left", name="Radar Front Left", array_key="radar_distances", array_index=0),
     OverdriveBYDSensorEntityDescription(key="radar_front_mid_left", name="Radar Front Mid Left", array_key="radar_distances", array_index=1),
     OverdriveBYDSensorEntityDescription(key="radar_front_mid_right", name="Radar Front Mid Right", array_key="radar_distances", array_index=2),
