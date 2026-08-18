@@ -91,8 +91,22 @@ class OverdriveBYDCoordinator(DataUpdateCoordinator):
 
     @staticmethod
     def _decode_payload(payload: Any) -> Any:
-        """Decode JSON numbers/objects/arrays, while accepting plain strings."""
-        text = str(payload).strip()
+        """Decode MQTT payloads safely.
+
+        Home Assistant normally supplies MQTT payloads as strings, but bytes
+        are accepted too so numeric telemetry never becomes a value such as
+        ``b\'30\'``. JSON numbers, booleans, objects and arrays are decoded;
+        ordinary text is returned unchanged.
+        """
+        if isinstance(payload, bytes):
+            try:
+                text = payload.decode("utf-8")
+            except UnicodeDecodeError:
+                text = payload.decode("utf-8", errors="replace")
+        else:
+            text = str(payload)
+
+        text = text.strip()
         try:
             return json.loads(text)
         except (json.JSONDecodeError, TypeError):
@@ -154,6 +168,27 @@ class OverdriveBYDCoordinator(DataUpdateCoordinator):
 
     @callback
     def _availability_received(self, msg) -> None:
-        payload = str(msg.payload).strip().lower()
-        self.available = payload == "online"
+        """Handle optional OverDrive availability without masking live data.
+
+        Different OverDrive/MQTT setups may publish ``online``/``offline``,
+        booleans, or 1/0.  An unknown availability payload must not make the
+        whole vehicle unavailable when telemetry is actively arriving.
+        """
+        payload = self._decode_payload(msg.payload)
+
+        if isinstance(payload, bool):
+            self.available = payload
+        elif isinstance(payload, (int, float)):
+            self.available = payload != 0
+        else:
+            status = str(payload).strip().lower()
+            if status in {"online", "on", "true", "1", "available", "connected"}:
+                self.available = True
+            elif status in {"offline", "off", "false", "0", "unavailable", "disconnected"}:
+                # Only mark it offline when OverDrive explicitly says so.
+                self.available = False
+            else:
+                _LOGGER.debug("Ignoring unknown OverDrive availability payload: %r", payload)
+                return
+
         self.async_update_listeners()

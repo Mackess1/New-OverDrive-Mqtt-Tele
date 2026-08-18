@@ -1,111 +1,81 @@
+from __future__ import annotations
+
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import ClimateEntityFeature, HVACMode
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
-from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .command import async_send_command
-from .const import DOMAIN, CONF_NAME
+from .command import async_send_control
+from .control_entity import OverdriveBYDControlEntity
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    name = entry.data[CONF_NAME]
-    signal = f"{DOMAIN}_{entry.entry_id}_update"
-
-    async_add_entities([OverdriveBYDClimate(entry, name, signal)])
+    coordinator = hass.data["overdrive_byd"][entry.entry_id]
+    async_add_entities([OverdriveBYDClimate(coordinator)])
 
 
-class OverdriveBYDClimate(ClimateEntity):
-    def __init__(self, entry, vehicle_name, signal):
-        self.entry = entry
-        self.vehicle_name = vehicle_name
-        self.signal = signal
-
-        self._attr_name = f"{vehicle_name} AC"
-        self._attr_unique_id = f"{entry.entry_id}_ac"
+class OverdriveBYDClimate(OverdriveBYDControlEntity, ClimateEntity):
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "climate", "Climate", "mdi:air-conditioner")
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-        self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
-        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL]
-        self._attr_min_temp = 16
-        self._attr_max_temp = 30
+        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.AUTO]
+        self._attr_fan_modes = [str(i) for i in range(1, 8)]
+        self._attr_min_temp = 17
+        self._attr_max_temp = 33
         self._attr_target_temperature_step = 1
-
-        self._target_temperature = 22
-        self._hvac_mode = HVACMode.OFF
-
-    @property
-    def device_info(self):
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.entry.entry_id)},
-            name=self.vehicle_name,
-            manufacturer="BYD",
-            model="Overdrive MQTT Vehicle",
+        self._attr_supported_features = (
+            ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE
         )
-
-    @property
-    def target_temperature(self):
-        data = self.hass.data[DOMAIN][self.entry.entry_id]["data"]
-
-        if "target_temp" in data:
-            return data.get("target_temp")
-
-        if "climate_temp" in data:
-            return data.get("climate_temp")
-
-        return self._target_temperature
-
-    @property
-    def current_temperature(self):
-        data = self.hass.data[DOMAIN][self.entry.entry_id]["data"]
-        return data.get("cabin_temp") or data.get("int_temp") or data.get("ext_temp")
+        self._optimistic_temp = 22.0
+        self._optimistic_mode = HVACMode.OFF
+        self._optimistic_fan = None
 
     @property
     def hvac_mode(self):
-        data = self.hass.data[DOMAIN][self.entry.entry_id]["data"]
+        raw = self.coordinator.data.get("ac_on")
+        if raw is None:
+            return self._optimistic_mode
+        return HVACMode.AUTO if str(raw).strip().lower() not in {"0", "false", "off"} else HVACMode.OFF
 
-        if data.get("climate_on") == 1 or data.get("climate_on") is True:
-            return HVACMode.COOL
+    @property
+    def target_temperature(self):
+        raw = self.coordinator.data.get("climate_setpoint")
+        try:
+            return float(raw) if raw is not None else self._optimistic_temp
+        except (TypeError, ValueError):
+            return self._optimistic_temp
 
-        return self._hvac_mode
+    @property
+    def current_temperature(self):
+        raw = self.coordinator.data.get("cabin_temp")
+        try:
+            return float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def fan_mode(self):
+        raw = self.coordinator.data.get("ac_fan")
+        if raw is not None and str(raw) in self.fan_modes:
+            return str(raw)
+        return self._optimistic_fan
 
     async def async_set_hvac_mode(self, hvac_mode):
-        if hvac_mode == HVACMode.COOL:
-            await async_send_command(
-                self.hass,
-                self.entry,
-                "climate_on",
-                temperature=self.target_temperature,
-            )
-            self._hvac_mode = HVACMode.COOL
-
-        elif hvac_mode == HVACMode.OFF:
-            await async_send_command(self.hass, self.entry, "climate_off")
-            self._hvac_mode = HVACMode.OFF
-
+        payload = "off" if hvac_mode == HVACMode.OFF else "auto"
+        await async_send_control(self.hass, self.coordinator.entry, "climate", payload, "mode")
+        self._optimistic_mode = hvac_mode
         self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs):
         temperature = kwargs.get(ATTR_TEMPERATURE)
-
         if temperature is None:
             return
-
-        self._target_temperature = int(temperature)
-
-        await async_send_command(
-            self.hass,
-            self.entry,
-            "set_climate_temperature",
-            temperature=int(temperature),
-        )
-
+        await async_send_control(self.hass, self.coordinator.entry, "climate", temperature, "temperature")
+        self._optimistic_temp = float(temperature)
         self.async_write_ha_state()
 
-    async def async_added_to_hass(self):
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                self.signal,
-                self.async_write_ha_state,
-            )
-        )
+    async def async_set_fan_mode(self, fan_mode):
+        if fan_mode not in self.fan_modes:
+            return
+        await async_send_control(self.hass, self.coordinator.entry, "climate", fan_mode, "fan_mode")
+        self._optimistic_fan = fan_mode
+        self.async_write_ha_state()

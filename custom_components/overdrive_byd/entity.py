@@ -50,4 +50,10 @@ class OverdriveBYDEntity(CoordinatorEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.available
+        # Any received telemetry is positive proof that the vehicle feed is
+        # alive. This prevents an absent/non-retained or differently encoded
+        # availability topic from making every Home Assistant entity
+        # unavailable at once. Explicit offline is still respected until new
+        # telemetry arrives, at which point the coordinator sets available
+        # back to True.
+        return self.coordinator.available or bool(self.coordinator.data)

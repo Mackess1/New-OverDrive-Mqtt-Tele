@@ -1,3 +1,7 @@
+## Current release: v1.2.0
+
+Includes native Home Assistant vehicle controls over OverDrive MQTT.
+
 # Overdrive BYD MQTT
 
 A Home Assistant custom integration for BYD vehicles using Overdrive MQTT telemetry.
